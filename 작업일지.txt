@@ -1,0 +1,303 @@
+2025-05-11(일)
+로그인 게시판 홈페이지를 만들거다. 
+
+오랜만에 티스토리 블로그 들어가보니 
+광고 눌렀어요~ 제 블로그도 눌러주세요 ^^ 이딴 댓글이 달려있다.
+난 광고 하나도 안붙였는데 광고가 붙어있다고? 들어가보니 진짜 붙어있네? 검색해보니 카카오가 붙였다네?
+어차피 일기장으로 쓰던건데 내가 만들고 말지.
+
+스프링 프로젝트는 https://start.spring.io/ 에서 시작한다.
+(Spring Boot 애플리케이션의 기본 프로젝트 구조를 자동으로 생성해주는 도구입니다. 초기설정은 이거 하나면 끝.)
+
+저번에 maven으로 만들었으니 이번엔 gradle로 만들어보자. 
+
+(Maven과 Gradle은 **Java 프로젝트의 빌드 도구(Build Tool)**입니다.
+Maven vs Gradle 비교
+항목	Maven	Gradle
+설정 파일	pom.xml (XML 기반)	build.gradle (Groovy 또는 Kotlin DSL)
+문법	고정된 형식 (정적)	유연하고 스크립트 기반 (동적)
+빌드 속도	느릴 수 있음	빠름 (캐싱, 병렬 처리)
+가독성	명확하지만 장황함	짧고 간결함
+플러그인 확장성	많지만 고정적	확장성 뛰어남
+학습 난이도	상대적으로 쉬움	처음엔 약간 헷갈릴 수 있음)
+
+초기파일을 넣자마자 오류가 보인다. 
+Unsupported class file major version 68
+현재 IntelliJ 또는 Gradle이 사용하는 JDK 버전보다 높은 버전으로 컴파일된 클래스 파일을 실행하려 할 때 발생하는 오류. 
+초기파일은 자바 17로 설정되있다. 
+
+C:\Users\yuuki>java -version
+Picked up _JAVA_OPTIONS: -Xmx512m
+java version "22.0.1" 2024-04-16
+Java(TM) SE Runtime Environment (build 22.0.1+8-16)
+Java HotSpot(TM) 64-Bit Server VM (build 22.0.1+8-16, mixed mode, sharing)
+
+오라클에서 자바 17 다운받기.
+시스템 -> 환경변수에서 패스설정. 
+기존 자바22패스 대신 17을 넣고 우선순위 올린다. 
+
+C:\Users\yuuki>java -version
+Picked up _JAVA_OPTIONS: -Xmx512m
+java version "17.0.12" 2024-07-16 LTS
+Java(TM) SE Runtime Environment (build 17.0.12+8-LTS-286)
+Java HotSpot(TM) 64-Bit Server VM (build 17.0.12+8-LTS-286, mixed mode, sharing)
+
+안되네... 다시 java17로 설정초기파일만들어서 넣었다. 
+된다. 아까 만들때 java21로 만들었던건가? 
+
+2025-05-13(화)
+
+개발 순서
+1. 회원(User) 엔티티 생성
+2. 회원가입, 로그인 기능 구현 (Spring Security) 
+3. 게시글(Post) 엔티티 생성 및 CRUD
+4. 로그인한 사용자만 게시글 작성 가능하게 설정 + 로그인 안하면 게시글 못봄. 
+5. Thymeleaf로 화면 구성
+
+-----
+src
+└─ main
+   └─ java
+      └─ com.example.loginboard
+
+         ├─ controller
+         ├─ entity
+         ├─ repository
+         ├─ service
+         └─ security
+
+1단계: User 엔티티 및 회원가입 로직
+폴더 다섯개 만들고,
+
+User 엔티티
+// entity/User.java
+
+package com.example.loginboard.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor
+public class User {
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(unique = true)
+    private String username;
+
+    private String password;
+    private String role = "USER";
+}
+
+UserRepository(레포지토리)
+// repository/UserRepository.java
+
+package com.example.loginboard.repository;
+
+import com.example.loginboard.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByUsername(String username);
+}
+
+
+UserService (회원가입)
+// service/UserService.java
+
+package com.example.loginboard.service;
+
+import com.example.loginboard.entity.User;
+import com.example.loginboard.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    public UserService(UserRepository repo, PasswordEncoder encoder) {
+        this.userRepository = repo;
+        this.passwordEncoder = encoder;
+    }
+
+    public void signup(String username, String rawPassword) {
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(passwordEncoder.encode(rawPassword));
+        userRepository.save(user);
+    }
+}
+
+Spring Security 설정
+// security/SecurityConfig.java
+
+package com.example.loginboard.security;
+
+import com.example.loginboard.service.CustomUserDetailsService;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/login", "/signup").permitAll()
+                .anyRequest().authenticated()
+            )
+            .formLogin(form -> form
+                .loginPage("/login")
+                .defaultSuccessUrl("/posts", true)
+                .permitAll()
+            )
+            .logout(logout -> logout
+                .logoutSuccessUrl("/login")
+            );
+        return http.build();
+    }
+
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+        return config.getAuthenticationManager();
+    }
+}
+
+2단계: 로그인 & 회원가입 화면 및 컨트롤러
+브라우저에서 회원가입 → 로그인 → 게시판 이동 흐름을 만들 차례다.
+
+Thymeleaf 템플릿 디렉터리 구조
+src
+└─ main
+   └─ resources
+      ├─ static        // css, js, 이미지
+      └─ templates     // html 템플릿
+          ├─ login.html
+          └─ signup.html
+
+-----
+
+회원가입 화면 (signup.html)
+<!-- templates/signup.html -->
+
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>회원가입</title></head>
+<body>
+<h2>회원가입</h2>
+<form th:action="@{/signup}" method="post">
+    <input type="text" name="username" placeholder="아이디" required/><br/>
+    <input type="password" name="password" placeholder="비밀번호" required/><br/>
+    <button type="submit">가입하기</button>
+</form>
+<a href="/login">로그인하러 가기</a>
+</body>
+</html>
+
+로그인 화면 (login.html)
+<!-- templates/login.html -->
+
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>로그인</title></head>
+<body>
+<h2>로그인</h2>
+<form th:action="@{/login}" method="post">
+    <input type="text" name="username" placeholder="아이디" required/><br/>
+    <input type="password" name="password" placeholder="비밀번호" required/><br/>
+    <button type="submit">로그인</button>
+</form>
+<a href="/signup">회원가입</a>
+</body>
+</html>
+
+컨트롤러: AuthController.java
+// controller/AuthController.java
+
+package com.example.login_board.controller;
+
+import com.example.login_board.service.UserService;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.*;
+
+@Controller
+public class AuthController {
+
+    private final UserService userService;
+
+    public AuthController(UserService userService) {
+        this.userService = userService;
+    }
+
+    @GetMapping("/signup")
+    public String signupForm() {
+        return "signup";
+    }
+
+    @PostMapping("/signup")
+    public String signup(@RequestParam String username, @RequestParam String password) {
+        userService.signup(username, password);
+        return "redirect:/login";
+    }
+
+    @GetMapping("/login")
+    public String loginForm() {
+        return "login";
+    }
+}
+
+여기서 한번 테스트 해보자. 
+
+1. 브라우저에서 /signup 접속
+http://localhost:8080/signup
+
+2. 회원가입 후 /login으로 이동
+
+3. 로그인 성공 시 /posts로 리디렉션될 예정
+
+이제 /posts부터 게시판 페이지를 만들면 된다. 
+
+-----
+
+오류뜸.
+C:\Users\yuuki\GitProject\Loginboard\login-board\login-board\src\main\java\com\example\login_board\entity\User.java:8: error: cannot find symbol
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor
+ ^
+  symbol: class Getter
+
+Lombok 라이브러리가 빠져 있어서 생기는 문제
+build.gradle에 Lombok 의존성 추가
+
+dependencies {
+    // ... 기존 의존성
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+}
+
+이건 해결.
+
+다음 오류
+Execution failed for task ':LoginBoardApplication.main()'
+Process 'command 'C:\Program Files\Java\jdk-17\bin\java.exe'' finished with non-zero exit value 1
+아직 db설정 안해놔서 생긴것같다. 
+
+db만들고 연결해두자. 
+
