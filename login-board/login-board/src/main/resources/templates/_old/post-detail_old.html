@@ -1,0 +1,32 @@
+<h2 th:text="${post.title}">제목</h2>
+<p th:text="${post.content}">내용</p>
+
+<p>
+    작성자:
+    <span th:if="${post.author != null}" th:text="${post.author.username}"></span>
+    <span th:unless="${post.author != null}">알 수 없음</span>
+</p>
+
+<!-- 댓글 목록 -->
+<h3>댓글</h3>
+<ul>
+    <li th:each="c : ${post.comments}">
+        <b th:if="${c.author != null}" th:text="${c.author.username}">익명</b>:
+        <span th:text="${c.content}">댓글</span>
+    </li>
+</ul>
+
+<!-- 댓글 작성 -->
+<form th:action="@{/posts/{id}/comments(id=${post.id})}" method="post">
+    <input type="text" name="content" placeholder="댓글을 입력하세요" required/>
+    <button type="submit">작성</button>
+</form>
+
+<!-- 수정/삭제 버튼 (작성자 본인만 보임) -->
+<a th:if="${#authentication.name == post.author?.username}"
+   th:href="@{/posts/{id}/edit(id=${post.id})}">수정</a>
+
+<form th:if="${#authentication.name == post.author?.username}"
+      th:action="@{/posts/{id}/delete(id=${post.id})}" method="post">
+    <button type="submit">삭제</button>
+</form>

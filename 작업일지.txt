@@ -301,3 +301,334 @@ Process 'command 'C:\Program Files\Java\jdk-17\bin\java.exe'' finished with non-
 
 db만들고 연결해두자. 
 
+2025-05-15(목)
+
+db만들기 
+CREATE DATABASE loginboard DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+SHOW DATABASES; 로 확인
+
+application.properties에 mysql 설정
+
+# ───── DB 접속 정보 ─────
+spring.datasource.url=jdbc:mysql://localhost:3306/loginboard?serverTimezone=Asia/Seoul
+spring.datasource.username=root
+spring.datasource.password=1234
+
+# ───── JPA 설정 ─────
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.database-platform=org.hibernate.dialect.MySQL8Dialect
+
+# (선택) 서버 포트 변경
+# server.port=8080
+
+실행이 가능한 public static void main(String[] args) 메서드를 가진 클래스는 Main Class, Entry Point	라고 한다. 
+그런데 이게 실행버튼이 안되는 오류 발생. 
+
+해당 파일을 IntelliJ가 "Sources Root"로 인식하는지 확인
+src/main/java 폴더에서 우클릭
+Mark Directory as → Sources Root 클릭
+이렇게 하면 IntelliJ가 main() 클래스들을 실행 대상으로 인식할 수 있다. 
+
+해결완료.
+
+자꾸 오류떠서 뭔가 이상했는데 프로젝트 오픈할때 상위폴더를 열어서 생겼던 문제같다. 
+다시 오픈해서 원래 위치대로 열었음. 
+
+2025-05-15(목)
+게시판 기능 만든다. 
+
+1단계: Post 엔티티 생성
+// src/main/java/com/example/loginboard/entity/Post.java
+
+package com.example.loginboard.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Getter @Setter
+@NoArgsConstructor @AllArgsConstructor
+public class Post {
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String content;
+
+    @ManyToOne
+    private User author;
+}
+
+2단계: PostRepository 생성
+// src/main/java/com/example/loginboard/repository/PostRepository.java
+
+package com.example.loginboard.repository;
+
+import com.example.loginboard.entity.Post;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface PostRepository extends JpaRepository<Post, Long> {
+}
+
+3단계: PostController 생성
+// src/main/java/com/example/loginboard/controller/PostController.java
+
+package com.example.loginboard.controller;
+
+import com.example.loginboard.entity.Post;
+import com.example.loginboard.entity.User;
+import com.example.loginboard.repository.PostRepository;
+import com.example.loginboard.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@Controller
+@RequiredArgsConstructor
+public class PostController {
+
+    private final PostRepository postRepository;
+    private final UserRepository userRepository;
+
+    @GetMapping("/posts")
+    public String listPosts(Model model) {
+        List<Post> posts = postRepository.findAll();
+        model.addAttribute("posts", posts);
+        return "posts";
+    }
+
+    @GetMapping("/posts/new")
+    public String newPostForm() {
+        return "new-post";
+    }
+
+    @PostMapping("/posts")
+    public String createPost(@RequestParam String title,
+                             @RequestParam String content,
+                             @AuthenticationPrincipal UserDetails userDetails) {
+
+        User user = userRepository.findByUsername(userDetails.getUsername()).orElseThrow();
+        Post post = new Post();
+        post.setTitle(title);
+        post.setContent(content);
+        post.setAuthor(user);
+        postRepository.save(post);
+
+        return "redirect:/posts";
+    }
+}
+
+4단계: Thymeleaf 템플릿 만들기
+📄 게시글 목록 (posts.html)
+<!-- src/main/resources/templates/posts.html -->
+
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>게시판</title></head>
+<body>
+<h2>게시글 목록</h2>
+<a href="/posts/new">글쓰기</a>
+<ul>
+    <li th:each="post : ${posts}">
+        <strong th:text="${post.title}">제목</strong> by <span th:text="${post.author.username}">작성자</span>
+    </li>
+</ul>
+</body>
+</html>
+
+📄 글쓰기 페이지 (new-post.html)
+<!-- src/main/resources/templates/new-post.html -->
+
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>글쓰기</title></head>
+<body>
+<h2>게시글 작성</h2>
+<form th:action="@{/posts}" method="post">
+    <input type="text" name="title" placeholder="제목" required/><br/>
+    <textarea name="content" placeholder="내용" rows="5" cols="30" required></textarea><br/>
+    <button type="submit">작성</button>
+</form>
+<a href="/posts">목록으로</a>
+</body>
+</html>
+
+실행 테스트
+브라우저에서 /login → 로그인
+http://localhost:8080/signup
+/posts → 게시글 목록
+글쓰기 클릭 → /posts/new → 작성 후 저장
+다시 목록에서 새 글 확인
+
+새로만든파일이 빨간색으로 나오면서 오류없이 그냥 안됨. 
+posts 들어가면 404오류뜸. 
+디렉터리를 다음으로 표시 -> 에서 소스파일을 껐다 켰더니 빨강 사라지고 정상작동함. 해결. 
+
+-----
+
+지금까지 만든 기능 요약
+
+기능	상태	설명
+🔐 로그인/회원가입	✅	Spring Security 기반
+📝 게시글 작성	✅	로그인한 사용자만 가능
+📄 게시글 목록	✅	/posts
+📂 게시글 상세 보기	✅	/posts/{id}
+✏ 게시글 수정	✅	/posts/{id}/edit (작성자만 가능)
+🗑 게시글 삭제	✅	/posts/{id}/delete (작성자만 가능)
+💬 댓글 기능	🟡 준비 완료	Comment.java, CommentRepository까지 생성됨
+
+posts-detail에 수정삭제가 있는거같은데 거기로 들어가는 길이 없는거같다. 
+
+2025-05-16(금)
+
+<ul>
+    <li th:each="post : ${posts}">
+        <a th:href="@{/posts/{id}(id=${post.id})}">
+            <strong th:text="${post.title}">제목</strong>
+        </a>
+        <span> by <span th:text="${post.author.username}">작성자</span></span>
+    </li>
+
+게시글 제목 누르면 상세게시글로 들어감. 
+500오류 발생. 
+
+
+문제 핵심 요약
+<span th:text="${post.author.username}"></span>
+<b th:text="${c.author.username}"></b>
+위와 같은 부분에서 post.author 또는 c.author가 null이면 → 무조건 500 오류 발생합니다.
+
+아니었다. 파일이름 오타였음. 
+해결.
+
+댓글 작성기능 추가
+
+경로	설명
+POST /posts/{id}/comments	게시글 상세 페이지에서 댓글 작성 폼으로 전송된 데이터 처리
+
+1. PostController에 댓글 작성 메서드 추가
+// PostController.java
+
+@PostMapping("/posts/{id}/comments")
+public String addComment(@PathVariable Long id,
+                         @RequestParam String content,
+                         @AuthenticationPrincipal UserDetails userDetails) {
+
+    Post post = postRepository.findById(id).orElseThrow();
+    User user = userRepository.findByUsername(userDetails.getUsername()).orElseThrow();
+
+    Comment comment = new Comment();
+    comment.setContent(content);
+    comment.setPost(post);
+    comment.setAuthor(user);
+
+    commentRepository.save(comment);
+    return "redirect:/posts/" + id;
+}
+
+2. 댓글 작성 폼 
+<!-- post-detail.html -->
+
+<form th:action="@{/posts/{id}/comments(id=${post.id})}" method="post">
+    <input type="text" name="content" placeholder="댓글을 입력하세요" required />
+    <button type="submit">댓글 작성</button>
+</form>
+
+2025-05-17(토)
+오류발생. 
+tController.java:108: error: cannot find symbol
+        commentRepository.save(comment);
+        ^
+  symbol:   variable commentRepository
+  location: class PostController
+
+PostController에서 
+import com.example.login_board.repository.CommentRepository;
+private final CommentRepository commentRepository;  
+추가. 해결.
+
+테스트 완료. 댓글 잘 작성됨. 
+
+2025-05-22(목)
+무료 HTML 블로그 템플릿 적용 (Thymeleaf에 입히기)
+https://startbootstrap.com/theme/clean-blog
+
+현재 보유한 템플릿 파일
+파일 이름	기능	유지 여부 추천
+edit-post.html	게시글 수정 폼	✅ 유지 (새 템플릿에 맞게 디자인만 바꾸기)
+login.html	로그인 페이지	✅ 유지 (디자인 변경은 선택)
+new-post.html	새 게시글 작성	✅ 유지 (중요)
+post-detail.html	게시글 상세 보기	✅ 백업 후 새 템플릿으로 교체 가능
+posts.html	게시글 목록 페이지	✅ 백업 후 새 템플릿으로 교체 가능
+signup.html	회원가입 페이지	✅ 유지 (디자인만 바꿀 수 있음)
+
+
+문제발생.
+
+지금 이 페이지가 작동하지 않습니다.
+localhost 너무 여러 번 리디렉션되었습니다.
+
+이 사이트의 쿠키를 삭제해 보세요.
+ERR_TOO_MANY_REDIRECTS
+
+ Spring Security 설정에서 로그인 → 인증 → 다시 로그인 → 다시 인증... 무한 반복 루프가 발생한 경우입니다.
+
+
+.requestMatchers("/login", "/signup").permitAll() 
+여기에 정적 리소스(CSS, JS, 이미지 등) 가 빠져 있어서,
+로그인 페이지에 필요한 CSS/JS도 인증 필요로 간주되고 →
+그것도 /login으로 리디렉션됨 → 무한 루프 발생
+
+2025-05-25(일)
+http://localhost:8080/signup
+디자인은 대충 연결됬다. 
+로그인 -> 템플릿에서 가져온 posts 
+
+기능연결. 
+th:each는 Thymeleaf 템플릿 엔진에서 사용하는 반복문 구문입니다.
+HTML에서 for문처럼 리스트 데이터를 반복 출력할 때 사용합니다.
+
+th:each란?
+html
+th:each="item : ${items}"
+→ Java에서 이런 의미와 같아요:
+java
+for (Item item : items) { ... }
+즉, items라는 리스트에 있는 값을 하나씩 꺼내서 item에 담고, 반복해서 출력합니다.
+
+문제발생.
+detail에서 style.css가 적용 안됨. 
+같은 코드로 posts에선 적용됬는데..
+
+✅ 바꾼 후 (✅ Spring Boot에서 정상 작동)
+html
+복사
+편집
+<link th:href="@{/css/styles.css}" rel="stylesheet" />
+➡️ 이건 Thymeleaf가 Spring의 정적 경로(/static/css/styles.css)를 자동으로 붙여줍니다.
+
+✅ 정리: 정적 자원 사용 시 기본 규칙
+경로 예시	위치	HTML 내 사용법
+/css/styles.css	static/css/styles.css	th:href="@{/css/styles.css}"
+/js/scripts.js	static/js/scripts.js	th:src="@{/js/scripts.js}"
+/images/logo.png	static/images/logo.png	th:src="@{/images/logo.png}"
+
+수정했더니 정상 작동한다. 
+그냥 둘다 절대 경로로 수정함. 
+
+이제 모양이 어느정도 잡혔다. 
+
+login 화면에서 로그인성공하면 
+posts 화면에서 게시글 목록이 나오고 
+게시글을 누르면 posts-detail 화면이 나온다. 거기서 댓글작성 가능. 
+
